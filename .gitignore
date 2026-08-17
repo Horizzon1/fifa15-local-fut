@@ -26,3 +26,5 @@ dist/
 
 # Generated from the user's own FIFA 15 install (not redistributable)
 server/fifa15-*.json
+state/
+recon/*.ini
