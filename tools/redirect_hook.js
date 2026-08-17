@@ -41,6 +41,34 @@ var PORT_REMAP = {};
 
 var stats = { dnsRewritten: 0, dnsPassed: 0, connectRewritten: 0, connectPassed: 0 };
 
+/*
+ * Resolve an export across frida versions. frida 17 removed
+ * Module.findExportByName in favour of per-module lookup and
+ * Module.findGlobalExportByName, so try each shape in turn.
+ */
+function resolveExport(moduleName, exportName) {
+  try {
+    if (typeof Module.findExportByName === 'function') {
+      var legacy = Module.findExportByName(moduleName, exportName);
+      if (legacy) return legacy;
+    }
+  } catch (e) {}
+  try {
+    var mod = Process.findModuleByName(moduleName);
+    if (mod) {
+      var viaModule = mod.findExportByName(exportName);
+      if (viaModule) return viaModule;
+    }
+  } catch (e) {}
+  try {
+    if (typeof Module.findGlobalExportByName === 'function') {
+      var global = Module.findGlobalExportByName(exportName);
+      if (global) return global;
+    }
+  } catch (e) {}
+  return null;
+}
+
 function emit(kind, fields) {
   var payload = { kind: kind, time: Date.now() };
   for (var key in fields) payload[key] = fields[key];
@@ -99,8 +127,8 @@ function rewriteAddrInfo(resultPtr, hostname) {
 }
 
 function hookGetAddrInfo(moduleName, exportName, wide) {
-  var address = Module.findExportByName(moduleName, exportName);
-  if (address === null) return false;
+  var address = resolveExport(moduleName, exportName);
+  if (!address) return false;
 
   Interceptor.attach(address, {
     onEnter: function (args) {
@@ -136,8 +164,11 @@ function hookGetAddrInfo(moduleName, exportName, wide) {
 }
 
 function hookConnect(exportName) {
-  var address = Module.findExportByName('ws2_32.dll', exportName);
-  if (address === null) return false;
+  var address = resolveExport('ws2_32.dll', exportName);
+  if (!address) {
+    emit('hook-missing', { api: 'ws2_32!' + exportName });
+    return false;
+  }
 
   Interceptor.attach(address, {
     onEnter: function (args) {
