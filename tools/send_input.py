@@ -86,25 +86,49 @@ def focus(title_fragment: str) -> int | None:
     return bring_to_front(matches[0])
 
 
-def bring_to_front(hwnd: int, attempts: int = 6) -> int | None:
+kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+
+
+def bring_to_front(hwnd: int, attempts: int = 8) -> int | None:
     """Force the window to the foreground and VERIFY it got there.
 
-    Windows refuses SetForegroundWindow from a background process, which once
-    left the game behind an Explorer window — clicks and screenshots then landed
-    on Explorer instead. SwitchToThisWindow is the reliable lever; the result is
-    checked rather than assumed.
+    Windows blocks SetForegroundWindow from a process that does not own the
+    current foreground — which is exactly the case when a human is also using
+    the machine. The documented way through is to attach our input queue to the
+    foreground window's thread first; then the call is permitted.
+
+    Without this, clicks and screenshots silently landed on whatever window was
+    actually on top.
     """
-    for _ in range(attempts):
+    for attempt in range(attempts):
         user32.ShowWindow(hwnd, SW_RESTORE)
+
+        foreground = user32.GetForegroundWindow()
+        target_thread = user32.GetWindowThreadProcessId(hwnd, None)
+        current_thread = kernel32.GetCurrentThreadId()
+        foreground_thread = user32.GetWindowThreadProcessId(foreground, None) if foreground else 0
+
+        attached = []
+        for other in {foreground_thread, target_thread}:
+            if other and other != current_thread:
+                if user32.AttachThreadInput(current_thread, other, True):
+                    attached.append(other)
         try:
-            user32.SwitchToThisWindow(hwnd, True)
-        except AttributeError:
-            pass
-        user32.BringWindowToTop(hwnd)
-        user32.SetForegroundWindow(hwnd)
-        time.sleep(0.45)
+            user32.BringWindowToTop(hwnd)
+            user32.SetForegroundWindow(hwnd)
+            user32.SetActiveWindow(hwnd)
+            try:
+                user32.SwitchToThisWindow(hwnd, True)
+            except AttributeError:
+                pass
+        finally:
+            for other in attached:
+                user32.AttachThreadInput(current_thread, other, False)
+
+        time.sleep(0.4)
         if user32.GetForegroundWindow() == hwnd:
             return hwnd
+
     print("!! could not bring the game window to the foreground; refusing to act "
           "so input does not land on another window", file=sys.stderr)
     return None

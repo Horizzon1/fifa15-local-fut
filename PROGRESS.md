@@ -169,6 +169,32 @@ Everything else is ruled out by measurement, not assumption:
 
 What remains is the OSDK online state machine never starting the Blaze connect, because there is no authenticated EA/Origin user session. `ItsAMe_Origin.dll` answers the identity request with `UserId 0000000000` — literally "no user". No user session, no online session, so nothing is ever dialled. The persistent "PRESS RS TO RE-CONNECT" banner and the repeated `WSAStartup` churn are both consistent with that.
 
+### Tried: EA's own developer override channel (negative result)
+
+Worth recording because it was the most promising legitimate idea and it is now ruled out.
+
+The client contains EA's internal override switches — found in `fifa15.exe`:
+
+```
+ONLINE/USE_OSDKDEBUG_FILE      ONLINE/BLAZE_SERVICE_NAME_OVERRIDE
+ONLINE/BLAZEENV_OVERRIDE       ONLINE/BLAZEPORT
+ONLINE/SERVERPORT              ONLINE/SERVER_RS4
+FUT_DIRECT_BOOT   DirectBootFUT   LoadFUTSkipBlaze   FUT_URI
+```
+
+`LoadFUTSkipBlaze` in particular reads as "load FUT without the Blaze session", which is exactly the wanted behaviour.
+
+Confirmed by hooking `CreateFileW` that the game really does read the config files:
+
+- `F:\Games\FIFA 15/cl.ini` — **opened**
+- `osdkdebugmanager.ini` — **opened** (does not ship with the game; created for the test)
+
+So the channel is real. Both files were populated with the direct-boot flags and the Blaze host/port overrides, and the game was launched and driven to the main menu.
+
+**Result: no change.** Clicking Ultimate Team produced zero network activity — no DNS, no connect, nothing reaching the local server. With the overrides in place the client simply does nothing at all rather than showing its usual error.
+
+Conclusion: these keys are consumed *after* the session gate, not before it. Configuration cannot route around the missing session. The files created for this test were removed afterwards.
+
 ### The missing precondition, and why it is hard to satisfy legitimately
 
 The gap is a single authenticated EA/Origin user session. Supply that and the client dials, the hook redirects it to loopback, and the server — already verified end to end over real sockets and real HTTP — answers.
