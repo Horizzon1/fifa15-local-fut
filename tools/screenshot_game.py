@@ -101,9 +101,23 @@ def capture(hwnd: int, output: Path, foreground: bool = True) -> tuple[bool, str
         return False, "window has no area"
 
     if foreground:
-        user32.ShowWindow(hwnd, SW_RESTORE)
-        user32.SetForegroundWindow(hwnd)
-        time.sleep(1.2)  # let the compositor present a frame
+        # BitBlt copies whatever is on screen at these coordinates, so if the
+        # game is behind another window we would silently photograph that
+        # window instead. Verify it actually reached the foreground.
+        for _ in range(6):
+            user32.ShowWindow(hwnd, SW_RESTORE)
+            try:
+                user32.SwitchToThisWindow(hwnd, True)
+            except AttributeError:
+                pass
+            user32.BringWindowToTop(hwnd)
+            user32.SetForegroundWindow(hwnd)
+            time.sleep(0.45)
+            if user32.GetForegroundWindow() == hwnd:
+                break
+        else:
+            return False, "game window would not come to the foreground; refusing to capture another window"
+        time.sleep(0.9)  # let the compositor present a frame  # let the compositor present a frame
 
     screen_dc = user32.GetDC(0)
     memory_dc = gdi32.CreateCompatibleDC(screen_dc)

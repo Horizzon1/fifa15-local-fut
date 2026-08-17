@@ -114,11 +114,41 @@ Three fixes went in off the back of that:
 
 The remaining puzzle: with all of the above active, the login attempt still produces **no `connect`, no `WSAConnect`, and no `ConnectEx`** — and `WSAIoctl` is never even asked for the ConnectEx pointer. So the socket is created, DNS is queried, and then the attempt is abandoned before any connect syscall.
 
-### Next diagnostic (the one thing I would do first)
+### The measurement, taken
 
-Log the **return status and results of `DnsQueryEx`**. It is asynchronous, so it returns `DNS_REQUEST_PENDING` and delivers records via a callback. If that callback reports failure — or the game rejects the answer — it would explain a created socket that never connects. That single measurement separates "DNS answer rejected" from "connect happens through an API still not hooked".
+Reached the real main menu (Man United profile created) and clicked **ULTIMATE TEAM**, with the server live and `DnsQueryEx` fully instrumented. Result:
 
-Everything server-side is finished and verified over real sockets; the gap is entirely in getting the client's attempt to arrive.
+```
+dns-query   host=spring14.gosredirector.ea.com  type=A  returned=0  SUCCESS (synchronous)
+dns-result  status=0  records=[{type:1, name:spring14.gosredirector.ea.com, a:159.153.51.19}]
+dns-query   host=localhost  type=A  returned=0  SUCCESS
+dns-result  status=0  records=[{type:1, name:localhost, a:127.0.0.1}]
+   (repeated three times for the EA host, twice for localhost)
+```
+
+So **DNS is not the problem.** The answer is clean and synchronous. The game also resolves `localhost`, which is interesting in its own right.
+
+And yet, across the same window:
+
+- No `connect`, no `WSAConnect`, no `ConnectEx`, and `WSAIoctl` is never asked for the ConnectEx pointer.
+- **`Get-NetTCPConnection` shows no connection and no SYN to `159.153.*` or to port 42127 at any point.** The operating system agrees: nothing is dialled.
+- The game reports "Unable to connect to the EA servers at this time".
+
+### Conclusion, stated carefully
+
+The client **resolves the redirector and then declines to dial it**. The failure is upstream of the network, which means a network-level redirect — the entire basis of this server design — never gets the chance to catch anything on this client as configured.
+
+**I have now been wrong in both directions on this, so here is the precise line between measured and inferred:**
+
+- *Measured*: DNS succeeds. No TCP connection is ever attempted. Offline modes work. The boot crash was a missing Windows Media Player component and is genuinely fixed.
+- *Inferred, not proven*: why it declines to dial. "Resolves, then refuses to connect" is the classic shape of a client with no valid session — which points back at the Origin/Nucleus entitlement layer I earlier dismissed. Proving that DNS works did **not** disprove the auth theory; I over-corrected when I said it did.
+
+### Honest position on finishing this
+
+Everything server-side is complete and verified over real sockets and real HTTP. The remaining gap is entirely in the client's pre-connect logic, and the credible ways through it are:
+
+1. **A FIFA 15 build whose online path is intact.** Point the launcher at it; nothing else here needs to change.
+2. Reverse-engineering the crack's DRM/entitlement emulation to manufacture a session. I am not doing that, and ownership of the game does not change it — it is still defeating a licence check, which is a different activity from reimplementing servers EA switched off or from fixing a Windows compatibility bug.
 
 ## Earlier investigation of the boot crash (now solved)
 

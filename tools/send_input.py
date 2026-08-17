@@ -83,11 +83,31 @@ def focus(title_fragment: str) -> int | None:
     user32.EnumWindows(callback, 0)
     if not matches:
         return None
-    hwnd = matches[0]
-    user32.ShowWindow(hwnd, SW_RESTORE)
-    user32.SetForegroundWindow(hwnd)
-    time.sleep(0.5)
-    return hwnd
+    return bring_to_front(matches[0])
+
+
+def bring_to_front(hwnd: int, attempts: int = 6) -> int | None:
+    """Force the window to the foreground and VERIFY it got there.
+
+    Windows refuses SetForegroundWindow from a background process, which once
+    left the game behind an Explorer window — clicks and screenshots then landed
+    on Explorer instead. SwitchToThisWindow is the reliable lever; the result is
+    checked rather than assumed.
+    """
+    for _ in range(attempts):
+        user32.ShowWindow(hwnd, SW_RESTORE)
+        try:
+            user32.SwitchToThisWindow(hwnd, True)
+        except AttributeError:
+            pass
+        user32.BringWindowToTop(hwnd)
+        user32.SetForegroundWindow(hwnd)
+        time.sleep(0.45)
+        if user32.GetForegroundWindow() == hwnd:
+            return hwnd
+    print("!! could not bring the game window to the foreground; refusing to act "
+          "so input does not land on another window", file=sys.stderr)
+    return None
 
 
 def press(key: str, hold: float = 0.06) -> None:
