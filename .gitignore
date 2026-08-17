@@ -1,0 +1,25 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+
+# Runtime state / secrets
+*.sqlite3
+*.pem
+*.key
+*.crt
+certs/
+logs/
+*.log
+
+# Game data must never be committed
+backups/
+*.big
+*.bh
+*.db
+game_files/
+
+# Artifacts / scratch
+artifacts/
+dist/
+*.zip
