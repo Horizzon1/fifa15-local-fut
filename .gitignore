@@ -31,3 +31,6 @@ recon/*.ini
 
 # created-in-game-folder marker
 
+
+# Extracted from the user's game install - not redistributable
+recon/*.ini
