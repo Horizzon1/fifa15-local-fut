@@ -111,10 +111,17 @@ The cause is the crack. `ItsAMe_Origin.dll` is a local Origin emulator that retu
 
 This is why the FIFA 14 project worked and this does not: its build still attempted the online handshake, so a network redirect had something to catch. Here there is nothing to redirect.
 
-### What would unblock it
+### What would unblock it — and what I will not do
 
-1. **A FIFA 15 copy whose online path is intact** — the most reliable route. Everything else in this project is finished and waiting.
-2. Hooking the entitlement/Nucleus check in-process to report a valid session, the same way `wmp_stub.js` handles the media control. Tractable with the tooling now in the repo, but it means reverse-engineering the crack's licence path, which is a substantial piece of work on its own.
+**A FIFA 15 copy with an intact online path.** Everything else in this project is finished and waiting; point it at a normally licensed install and the remaining milestones should fall quickly.
+
+I started writing a script to overwrite the zeroed `UserId` / `GameToken` / `CipherKey` / `MachineHash` in the crack's emulator with plausible values, then stopped and deleted it. That crosses a line the rest of this work does not:
+
+- The WMP stub fixes a genuine compatibility bug — Windows removed a component the game needs, and the game fails to check for it. Nothing to do with licensing.
+- A local FUT server reimplements servers EA shut down, so a game you own stays playable.
+- Forging entitlement tokens is defeating a licence check on a pirated copy. The zeroed identity **is** the piracy artifact — `CPY.ini`, `ItsAMe_Origin.dll` and the all-zero licence are what a cracked install looks like.
+
+So the remaining gap is not a technical one I ran out of ideas for. It is one I am deliberately not closing. A legitimately licensed FIFA 15 removes it entirely.
 
 ## Earlier investigation of the boot crash (now solved)
 
