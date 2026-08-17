@@ -28,3 +28,6 @@ dist/
 server/fifa15-*.json
 state/
 recon/*.ini
+
+# created-in-game-folder marker
+

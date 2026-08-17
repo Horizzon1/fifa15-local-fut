@@ -451,8 +451,23 @@ class RedirectorHandler(BlazeConnectionHandler):
 
 
 class ReusableThreadingTCPServer(socketserver.ThreadingTCPServer):
+    """Dual-stack TCP server.
+
+    Windows resolves "localhost" to ::1 before 127.0.0.1, so a v4-only listener
+    silently never sees the client. Binding to :: with IPV6_V6ONLY cleared
+    accepts both families on one socket.
+    """
+
     allow_reuse_address = True
     daemon_threads = True
+    address_family = socket.AF_INET6
+
+    def server_bind(self) -> None:
+        try:
+            self.socket.setsockopt(socket.IPPROTO_IPV6, socket.IPV6_V6ONLY, 0)
+        except (AttributeError, OSError):
+            pass
+        super().server_bind()
 
 
 class TlsThreadingTCPServer(ReusableThreadingTCPServer):
@@ -486,8 +501,11 @@ def start_blaze_servers(config: ServerConfig, trace: TraceLog) -> list[threading
     )
     trace.emit("tls-ready", mode=config.cert_mode, ca=str(ca_path))
 
+    # "::" with IPV6_V6ONLY cleared covers both 127.0.0.1 and ::1.
+    bind_host = "::"
+
     redirector_server = TlsThreadingTCPServer(
-        (config.host, config.redirector_port),
+        (bind_host, config.redirector_port),
         make_handler(RedirectorHandler, config, trace),
         bind_and_activate=False,
     )
@@ -496,7 +514,7 @@ def start_blaze_servers(config: ServerConfig, trace: TraceLog) -> list[threading
     redirector_server.server_activate()
 
     blaze_server = ReusableThreadingTCPServer(
-        (config.host, config.blaze_port),
+        (bind_host, config.blaze_port),
         make_handler(BlazeConnectionHandler, config, trace),
     )
 

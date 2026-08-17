@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import argparse
 import signal
+import socket
 import sys
 import threading
 import time
@@ -31,6 +32,21 @@ FUT_BOOT_XML = """<?xml version="1.0" encoding="utf-8"?>
   <Cfg name="maintenance" value="0"/>
 </FutCfg>
 """
+
+
+class DualStackHTTPServer(ThreadingHTTPServer):
+    """Accepts both 127.0.0.1 and ::1; Windows prefers ::1 for "localhost"."""
+
+    allow_reuse_address = True
+    daemon_threads = True
+    address_family = socket.AF_INET6
+
+    def server_bind(self) -> None:
+        try:
+            self.socket.setsockopt(socket.IPPROTO_IPV6, socket.IPV6_V6ONLY, 0)
+        except (AttributeError, OSError):
+            pass
+        super().server_bind()
 
 
 class StaticHandler(BaseHTTPRequestHandler):
@@ -114,9 +130,7 @@ def main() -> int:
         servers.append(fut_server)
 
         static_handler = type("BoundStatic", (StaticHandler,), {"trace": trace})
-        static_server = ThreadingHTTPServer((config.host, config.static_http_port), static_handler)
-        static_server.allow_reuse_address = True
-        static_server.daemon_threads = True
+        static_server = DualStackHTTPServer(("::", config.static_http_port), static_handler)
         threading.Thread(target=static_server.serve_forever, name="static-http", daemon=True).start()
         servers.append(static_server)
         trace.emit("listener-started", role="static-http",

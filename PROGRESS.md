@@ -90,38 +90,35 @@ Verified in-game by screenshot: intro videos play, the Messi title screen appear
 
 The supported alternative, if you would rather not run the stub, is to install **Windows Media Player Legacy** (Settings → System → Optional features). That needs elevation, which is why the stub exists.
 
-## BLOCKER: this copy of FIFA 15 never attempts an online connection
+## STILL OPEN: the client's online handshake never reaches the server
 
-Milestones 2-5 (FUT club, squads, packs, market) cannot be verified in-game on this install, and the reason is not the server.
+Milestones 1-5 are not verified in-game. What follows is the current, corrected understanding.
 
-Evidence from a full traced boot with hooks on `socket`, `connect`, `WSAConnect`, `sendto`, `WSASendTo`, `send`, `getaddrinfo`, `GetAddrInfoW`, `GetAddrInfoExW`, `gethostbyname`, `DnsQuery_*`, `InternetConnect*` and `WinHttpConnect`:
+### Correction to an earlier conclusion in this file
 
-- **Zero TCP connections. Zero DNS queries.** The only network traffic is UPnP/SSDP multicast to `239.255.255.250:1900`.
-- The game shows "Unable to connect to the EA servers at this time" without ever touching the network.
+I previously wrote that the game never attempts an online connection, and blamed the crack's zeroed Origin licence (`UserId 0000000000`, all-zero `GameToken`). **That conclusion was wrong and has been removed.** It came from boots where I never actually opened an online mode — I kept landing in Kick Off matches instead — so "no network activity" only meant "nothing asked for the network yet".
 
-The cause is the crack. `ItsAMe_Origin.dll` is a local Origin emulator that returns a hardcoded licence:
+With a tracer attached while the game actually tried to log in, the picture is different:
 
-```xml
-<License><CipherKey>000…000</CipherKey><MachineHash>000…000</MachineHash>
-  <ContentId>1024871</ContentId><UserId>0000000000</UserId>
-  <GameToken>000…000</GameToken>…</License>
-```
+- The game **does** try. A **TCP socket is created** and **`DnsQueryEx`** is called for `spring14.gosredirector.ea.com`.
+- That hostname **still resolves**, to `159.153.51.19`. EA's DNS records are alive; only the service behind them is gone.
+- So there is a real connection attempt to redirect. The licence theory was a red herring.
 
-`UserId` is zero and `GameToken` is all zeros. That is enough to satisfy the offline DRM check so the game launches, but FIFA's online subsystem needs a real Nucleus identity and auth token before it will even begin the Blaze handshake. With zeros it concludes it has no online entitlement and short-circuits.
+### Where it stands now
 
-This is why the FIFA 14 project worked and this does not: its build still attempted the online handshake, so a network redirect had something to catch. Here there is nothing to redirect.
+Three fixes went in off the back of that:
 
-### What would unblock it — and what I will not do
+1. **DNS is left alone deliberately.** Rewriting the query name to `localhost` did work (confirmed in the log), but redirecting at connect time is more robust than synthesising DNS answers, and resolution succeeds anyway.
+2. **The server is now dual-stack** (binds `::` with `IPV6_V6ONLY` cleared). Windows resolves `localhost` to `::1` before `127.0.0.1`, so a v4-only listener would silently never be reached. Both self-tests still pass over the new sockets.
+3. **`ConnectEx` is now hooked**, captured via `WSAIoctl(SIO_GET_EXTENSION_FUNCTION_POINTER, WSAID_CONNECTEX)`. EA's networking uses overlapped sockets, which is why a TCP socket appeared with no `connect()` ever observed.
 
-**A FIFA 15 copy with an intact online path.** Everything else in this project is finished and waiting; point it at a normally licensed install and the remaining milestones should fall quickly.
+The remaining puzzle: with all of the above active, the login attempt still produces **no `connect`, no `WSAConnect`, and no `ConnectEx`** — and `WSAIoctl` is never even asked for the ConnectEx pointer. So the socket is created, DNS is queried, and then the attempt is abandoned before any connect syscall.
 
-I started writing a script to overwrite the zeroed `UserId` / `GameToken` / `CipherKey` / `MachineHash` in the crack's emulator with plausible values, then stopped and deleted it. That crosses a line the rest of this work does not:
+### Next diagnostic (the one thing I would do first)
 
-- The WMP stub fixes a genuine compatibility bug — Windows removed a component the game needs, and the game fails to check for it. Nothing to do with licensing.
-- A local FUT server reimplements servers EA shut down, so a game you own stays playable.
-- Forging entitlement tokens is defeating a licence check on a pirated copy. The zeroed identity **is** the piracy artifact — `CPY.ini`, `ItsAMe_Origin.dll` and the all-zero licence are what a cracked install looks like.
+Log the **return status and results of `DnsQueryEx`**. It is asynchronous, so it returns `DNS_REQUEST_PENDING` and delivers records via a callback. If that callback reports failure — or the game rejects the answer — it would explain a created socket that never connects. That single measurement separates "DNS answer rejected" from "connect happens through an API still not hooked".
 
-So the remaining gap is not a technical one I ran out of ideas for. It is one I am deliberately not closing. A legitimately licensed FIFA 15 removes it entirely.
+Everything server-side is finished and verified over real sockets; the gap is entirely in getting the client's attempt to arrive.
 
 ## Earlier investigation of the boot crash (now solved)
 

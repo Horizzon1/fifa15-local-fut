@@ -14,6 +14,7 @@ Two rules that come straight from the FIFA 14 project's scars:
 from __future__ import annotations
 
 import json
+import socket
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any
@@ -761,14 +762,24 @@ class FutHttpHandler(BaseHTTPRequestHandler):
 
 
 class FutHttpServer(ThreadingHTTPServer):
+    """Dual-stack HTTP server; see the note in blaze_server.ReusableThreadingTCPServer."""
+
     allow_reuse_address = True
     daemon_threads = True
+    address_family = socket.AF_INET6
+
+    def server_bind(self) -> None:
+        try:
+            self.socket.setsockopt(socket.IPPROTO_IPV6, socket.IPV6_V6ONLY, 0)
+        except (AttributeError, OSError):
+            pass
+        super().server_bind()
 
 
 def start_fut_http(config, store: IdentityStore, market, trace) -> ThreadingHTTPServer:
     handler = type("BoundFutHttpHandler", (FutHttpHandler,),
                    {"store": store, "market": market, "trace": trace})
-    server = FutHttpServer((config.host, config.fut_http_port), handler)
+    server = FutHttpServer(("::", config.fut_http_port), handler)
     trace.emit("listener-started", role="fut-http",
                address=f"{config.host}:{config.fut_http_port}")
     return server

@@ -40,8 +40,31 @@ class BITMAPINFO(ctypes.Structure):
     _fields_ = [("bmiHeader", BITMAPINFOHEADER), ("bmiColors", wintypes.DWORD * 3)]
 
 
+def game_pids(image_name: str = "fifa15.exe") -> set[int]:
+    """PIDs of the game, so a same-named Explorer window is never mistaken for it."""
+    import subprocess
+
+    result = subprocess.run(
+        ["tasklist", "/FI", f"IMAGENAME eq {image_name}", "/FO", "CSV", "/NH"],
+        capture_output=True, text=True,
+    )
+    pids = set()
+    for line in result.stdout.splitlines():
+        parts = [p.strip('"') for p in line.split('","')]
+        if len(parts) >= 2 and parts[1].isdigit():
+            pids.add(int(parts[1]))
+    return pids
+
+
 def find_window(title_fragment: str) -> int | None:
+    """Find the game's window.
+
+    Matching on title alone once picked up a File Explorer window showing the
+    FIFA 15 folder, so the owning process is checked too.
+    """
+    wanted = game_pids()
     matches: list[tuple[int, str]] = []
+    fallback: list[tuple[int, str]] = []
 
     @ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)
     def callback(hwnd, _lparam):
@@ -52,12 +75,21 @@ def find_window(title_fragment: str) -> int | None:
             return True
         buffer = ctypes.create_unicode_buffer(length + 1)
         user32.GetWindowTextW(hwnd, buffer, length + 1)
-        if title_fragment.lower() in buffer.value.lower():
-            matches.append((hwnd, buffer.value))
+        if title_fragment.lower() not in buffer.value.lower():
+            return True
+
+        pid = wintypes.DWORD()
+        user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
+        (matches if pid.value in wanted else fallback).append((hwnd, buffer.value))
         return True
 
     user32.EnumWindows(callback, 0)
-    return matches[0][0] if matches else None
+    if matches:
+        return matches[0][0]
+    if fallback:
+        print(f"!! only non-game windows matched {title_fragment!r}; is the game running?",
+              file=sys.stderr)
+    return None
 
 
 def capture(hwnd: int, output: Path, foreground: bool = True) -> tuple[bool, str]:
