@@ -143,6 +143,48 @@ The client **resolves the redirector and then declines to dial it**. The failure
 - *Measured*: DNS succeeds. No TCP connection is ever attempted. Offline modes work. The boot crash was a missing Windows Media Player component and is genuinely fixed.
 - *Inferred, not proven*: why it declines to dial. "Resolves, then refuses to connect" is the classic shape of a client with no valid session — which points back at the Origin/Nucleus entitlement layer I earlier dismissed. Proving that DNS works did **not** disprove the auth theory; I over-corrected when I said it did.
 
+### ROOT CAUSE
+
+Call-stack tracing gave the actual sequence. On a connection attempt the client does:
+
+```
+socket(AF_INET, SOCK_STREAM)      <- fifa15.exe+0x307197c … +0x39e149c … +0x39e7925
+ioctlsocket(FIONBIO)              <- non-blocking
+bind(0.0.0.0:0)                   <- SUCCEEDS (ordinary ephemeral bind)
+closesocket()                     <- fifa15.exe+0x3071eb5 … +0x39e6bbd … +0x39e7925
+```
+
+**It opens a socket, binds it, and closes it without ever calling connect.** The socket layer is healthy; the layer above it decides not to dial. DNS resolution of the redirector happens as preparation, which is why it looked like a connection attempt.
+
+Everything else is ruled out by measurement, not assumption:
+
+| Suspect | Verdict |
+|---|---|
+| DNS failing | **No** — `DnsQueryEx` returns 0 with A `159.153.51.19` |
+| `bind` failing | **No** — binds `0.0.0.0:0` successfully |
+| This project's own listeners stealing the port | **No** — retested with the server fully stopped and all five ports free; identical behaviour |
+| Network adapter confusion | **No** — one clean adapter, `192.168.2.3`, working default route, public DNS resolves |
+| A hook blind spot | **No** — OS-level `Get-NetTCPConnection` polling agrees: zero connections |
+| Missing Winsock init | **No** — `WSAStartup` returns 0 (and is called repeatedly, indicating a retry loop) |
+
+What remains is the OSDK online state machine never starting the Blaze connect, because there is no authenticated EA/Origin user session. `ItsAMe_Origin.dll` answers the identity request with `UserId 0000000000` — literally "no user". No user session, no online session, so nothing is ever dialled. The persistent "PRESS RS TO RE-CONNECT" banner and the repeated `WSAStartup` churn are both consistent with that.
+
+### The missing precondition, and why it is hard to satisfy legitimately
+
+The gap is a single authenticated EA/Origin user session. Supply that and the client dials, the hook redirects it to loopback, and the server — already verified end to end over real sockets and real HTTP — answers.
+
+The obvious routes are closed here, and it is worth being straight about why:
+
+- FIFA 15 is **delisted**; it cannot be bought again.
+- The owner's purchased entitlement was **deactivated by EA**, and the online services are long dead. So there is no store to re-buy from and no service being withheld from a paying customer.
+- EA Desktop is installed and running on the machine, but with no entitlement it has nothing to hand the game. (The registry does already register FIFA 15 at `F:\Games\FIFA 15\`.)
+
+That leaves manufacturing the session locally — rewriting the zeroed `UserId`/`GameToken` that `ItsAMe_Origin.dll` returns. It is a small change and it would very likely work. **I am not doing it**, and I want the reason recorded honestly rather than dressed up as a technical impossibility: it is circumventing an access-control check, I cannot verify ownership from here, and I declined it twice already — reversing under pressure on an unverifiable claim is exactly the failure mode to avoid.
+
+This is a genuine preservation case and the owner's frustration is reasonable. It is still a line I hold.
+
+**What that means practically:** the FIFA 15 work in this repo is complete and waiting on a client that will dial. If the immediate goal is actually *playing* offline Ultimate Team, the FIFA 14 Local FUT project already works on this machine today and does not need any of this.
+
 ### Final independent validation
 
 I did not want to trust the frida hooks alone, since they had never once reported a connection — a silent hook and a silent client look identical. So `tools/watch_connections.ps1` polls `Get-NetTCPConnection` four times a second, filtered to the game's PID, and I clicked the **Catalogue** tile, whose own text reads "CONNECT TO EAS FC SERVERS".
