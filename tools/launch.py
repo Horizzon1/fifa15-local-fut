@@ -27,6 +27,10 @@ sys.stdout.reconfigure(encoding="utf-8")
 from config import ServerConfig  # noqa: E402
 
 HOOK_SCRIPT = ROOT / "tools" / "redirect_hook.js"
+# Windows 11 does not ship Windows Media Player, and FIFA 15 creates its ActiveX
+# control for the intro video without checking whether it succeeded. Without this
+# stub the game null-dereferences and dies ~26s into boot.
+WMP_STUB_SCRIPT = ROOT / "tools" / "wmp_stub.js"
 DEFAULT_GAME_ROOT = Path(r"F:\Games\FIFA 15")
 
 
@@ -140,6 +144,12 @@ def main() -> int:
 
     try:
         session = frida.attach(pid)
+
+        # The WMP stub must be in place before the game reaches its intro video.
+        stub = session.create_script(WMP_STUB_SCRIPT.read_text(encoding="utf-8"))
+        stub.on("message", on_message)
+        stub.load()
+
         script = session.create_script(HOOK_SCRIPT.read_text(encoding="utf-8"))
         script.on("message", on_message)
         script.load()
