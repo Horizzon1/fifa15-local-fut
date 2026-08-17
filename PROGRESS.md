@@ -143,12 +143,36 @@ The client **resolves the redirector and then declines to dial it**. The failure
 - *Measured*: DNS succeeds. No TCP connection is ever attempted. Offline modes work. The boot crash was a missing Windows Media Player component and is genuinely fixed.
 - *Inferred, not proven*: why it declines to dial. "Resolves, then refuses to connect" is the classic shape of a client with no valid session — which points back at the Origin/Nucleus entitlement layer I earlier dismissed. Proving that DNS works did **not** disprove the auth theory; I over-corrected when I said it did.
 
+### Final independent validation
+
+I did not want to trust the frida hooks alone, since they had never once reported a connection — a silent hook and a silent client look identical. So `tools/watch_connections.ps1` polls `Get-NetTCPConnection` four times a second, filtered to the game's PID, and I clicked the **Catalogue** tile, whose own text reads "CONNECT TO EAS FC SERVERS".
+
+Result: **zero TCP connections, from the game, for anything, throughout.** The hooks and the operating system independently agree. FIFA 15 on this install opens no TCP socket to anywhere.
+
+That closes the question. The client's online subsystem is switched off before it reaches the network, so no server-side work and no redirect can reach it. This is not a bug in anything I built.
+
 ### Honest position on finishing this
 
 Everything server-side is complete and verified over real sockets and real HTTP. The remaining gap is entirely in the client's pre-connect logic, and the credible ways through it are:
 
-1. **A FIFA 15 build whose online path is intact.** Point the launcher at it; nothing else here needs to change.
-2. Reverse-engineering the crack's DRM/entitlement emulation to manufacture a session. I am not doing that, and ownership of the game does not change it — it is still defeating a licence check, which is a different activity from reimplementing servers EA switched off or from fixing a Windows compatibility bug.
+1. **Get the legitimate licence restored.** The owner bought FIFA 15 and EA revoked the entitlement. EA support can and does restore wrongly-removed entitlements; with the game installed normally through the EA app, its online path is intact and everything in this repo should work against it unchanged. This is the path I would push first — it is the only one that is both legitimate and complete.
+2. **Any FIFA 15 build whose online path is intact.** Point the launcher at it; nothing here needs to change.
+3. Reverse-engineering the crack's DRM/entitlement emulation to manufacture a session. I am not doing that, and ownership does not change it — it is still defeating a licence check, which is a different activity from reimplementing servers EA switched off or from fixing a Windows compatibility bug.
+
+### What is genuinely finished and reusable
+
+Independent of the client problem, all of this is done and verified:
+
+| Piece | State |
+|---|---|
+| FIFA 15 boot crash | **Fixed and seen working in-game.** Was fatal on every launch. |
+| Archive + client-DB tooling | BIG4/ViV4, chunkzip, CRC-32/MPEG-2, Huffman name tables — all verified against retail files |
+| Player catalog | 16,185 players from the game's own DB, full relational closure |
+| Blaze layer | Redirector, preAuth, five config groups, login, session notifications, postAuth, ping — all pass over real sockets, TLS 1.0-1.3 |
+| FUT HTTP layer | Packs, club, squads, market, store, match — all pass over real HTTP |
+| Identity store | Club, items, squads, listings, coin ledger, idempotent grants — persists across sessions |
+| `GIVE_100M_TEST_COINS.bat` | Works |
+| Diagnostics | Crash analyser, COM tracer, DNS result tracer, connection watcher, verified game-file backup/restore |
 
 ## Earlier investigation of the boot crash (now solved)
 
