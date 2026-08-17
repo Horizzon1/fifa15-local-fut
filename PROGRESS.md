@@ -10,12 +10,13 @@ Local FUT server for FIFA 15 PC. Big 3 verified in the real game: packs, squad b
 
 | # | Milestone | Status |
 |---|-----------|--------|
-| 0 | Recon: client boot trace (DNS/ports/TLS/Blaze/HTTP) | in progress |
-| 1 | Client connects to localhost, main menu "online" | not started |
-| 2 | FUT mode entered, club loads | not started |
-| 3 | Squad building works + persists | not started |
-| 4 | Packs | not started |
-| 5 | Transfer market | not started |
+| 0 | Recon: client boot trace (DNS/ports/TLS/Blaze/HTTP) | **done** |
+| — | Game boots and reaches the menus at all | **done — was crashing; fixed and seen working** |
+| 1 | Client connects to localhost, main menu "online" | **blocked** — this copy never attempts a connection (see below) |
+| 2 | FUT mode entered, club loads | blocked on 1 |
+| 3 | Squad building works + persists | server side done; blocked on 1 for in-game proof |
+| 4 | Packs | server side done; blocked on 1 for in-game proof |
+| 5 | Transfer market | server side done; blocked on 1 for in-game proof |
 | 6 | Polish + regression pass | not started |
 
 ## What works
@@ -69,7 +70,53 @@ Local FUT server for FIFA 15 PC. Big 3 verified in the real game: packs, squad b
 
 No elevation anywhere. The hosts file is **not** writable unelevated, so redirection uses frida hooks on `getaddrinfo`/`GetAddrInfoW` and `connect`/`WSAConnect` inside the game process — same approach FIFA 14 landed on, but without its port remap since 42127 is free. Nothing is installed system-wide; `frida` and `cryptography` live in the project `.venv`.
 
-## BLOCKER: FIFA 15 crashes on boot, before any networking
+## SOLVED: the boot crash (verified in the real game)
+
+**FIFA 15 now boots, reaches the menus, and plays matches.** It previously died ~26 seconds into every launch.
+
+Root cause, established by tracing rather than guessing:
+
+```
+CoCreateInstance({6BF52A52-394A-11D3-B153-00C04F79FAA6})   <- Windows Media Player control
+  -> 0x80040154 REGDB_E_CLASSNOTREG
+fifa15.exe+0x3f41916:  mov rax, qword ptr [rcx]            <- rcx = 0, access violation
+```
+
+FIFA 15 creates the Windows Media Player ActiveX control to play its intro video. Windows 11 no longer ships Windows Media Player, so the class is not registered. The game never checks the HRESULT and dereferences the null interface pointer.
+
+The fix is `tools/wmp_stub.js`: when that class fails to create, hand the game an inert COM object instead of NULL. `QueryInterface` returns itself, `AddRef`/`Release` are safe, every other vtable slot returns `E_NOTIMPL`. The intro video silently does nothing and boot continues. **No elevation, nothing registered system-wide, no game file modified.**
+
+Verified in-game by screenshot: intro videos play, the Messi title screen appears, the main menu loads, and a full Kick Off match at Anfield (Liverpool vs Man City) renders with correct squads and player ratings. Offline modes are intact, as required.
+
+The supported alternative, if you would rather not run the stub, is to install **Windows Media Player Legacy** (Settings → System → Optional features). That needs elevation, which is why the stub exists.
+
+## BLOCKER: this copy of FIFA 15 never attempts an online connection
+
+Milestones 2-5 (FUT club, squads, packs, market) cannot be verified in-game on this install, and the reason is not the server.
+
+Evidence from a full traced boot with hooks on `socket`, `connect`, `WSAConnect`, `sendto`, `WSASendTo`, `send`, `getaddrinfo`, `GetAddrInfoW`, `GetAddrInfoExW`, `gethostbyname`, `DnsQuery_*`, `InternetConnect*` and `WinHttpConnect`:
+
+- **Zero TCP connections. Zero DNS queries.** The only network traffic is UPnP/SSDP multicast to `239.255.255.250:1900`.
+- The game shows "Unable to connect to the EA servers at this time" without ever touching the network.
+
+The cause is the crack. `ItsAMe_Origin.dll` is a local Origin emulator that returns a hardcoded licence:
+
+```xml
+<License><CipherKey>000…000</CipherKey><MachineHash>000…000</MachineHash>
+  <ContentId>1024871</ContentId><UserId>0000000000</UserId>
+  <GameToken>000…000</GameToken>…</License>
+```
+
+`UserId` is zero and `GameToken` is all zeros. That is enough to satisfy the offline DRM check so the game launches, but FIFA's online subsystem needs a real Nucleus identity and auth token before it will even begin the Blaze handshake. With zeros it concludes it has no online entitlement and short-circuits.
+
+This is why the FIFA 14 project worked and this does not: its build still attempted the online handshake, so a network redirect had something to catch. Here there is nothing to redirect.
+
+### What would unblock it
+
+1. **A FIFA 15 copy whose online path is intact** — the most reliable route. Everything else in this project is finished and waiting.
+2. Hooking the entitlement/Nucleus check in-process to report a valid session, the same way `wmp_stub.js` handles the media control. Tractable with the tooling now in the repo, but it means reverse-engineering the crack's licence path, which is a substantial piece of work on its own.
+
+## Earlier investigation of the boot crash (now solved)
 
 **This is a pre-existing fault in the game install. It is not caused by this project** — it happens identically with the server off, the hook off, and the game launched by hand.
 
