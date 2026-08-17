@@ -160,11 +160,27 @@ and the decision is recorded in [PROGRESS.md](PROGRESS.md) under "The missing
 precondition." A handover should not quietly reverse that, so it is written here
 plainly instead of buried.
 
+**Also tried and ruled out — EA's own developer override channel.** The client
+carries internal switches (`ONLINE/USE_OSDKDEBUG_FILE`,
+`ONLINE/BLAZE_SERVICE_NAME_OVERRIDE`, `ONLINE/BLAZEENV_OVERRIDE`,
+`ONLINE/BLAZEPORT`, `ONLINE/SERVERPORT`, `FUT_DIRECT_BOOT`, `DirectBootFUT`,
+`LoadFUTSkipBlaze`). Hooking `CreateFileW` confirmed the game really does open
+both `cl.ini` and `osdkdebugmanager.ini`, so the channel is genuine. Both were
+populated with direct-boot flags and host/port overrides and the game was driven
+to the main menu. **Result: no change — zero network activity on selecting
+Ultimate Team.** These keys are consumed *after* the session gate, so
+configuration cannot route around it. Test files were removed afterwards.
+
 **Legitimate ways the whole project completes as-is:**
-1. A restored/valid FIFA 15 entitlement through the EA app — the online path is
-   intact and everything here works against it unchanged.
-2. Any FIFA 15 build whose online path is intact — point the launcher at it,
+1. Any FIFA 15 build whose online path is intact — point the launcher at it,
    nothing in the repo changes.
+
+Note on a dead end: an earlier draft of this file suggested restoring the
+entitlement through the EA app. **That is not available here.** FIFA 15 is
+delisted and cannot be repurchased, and the owner's purchased licence was
+deactivated by EA. There is no store to buy from and no service being withheld
+from a paying customer — which is what makes this a genuine preservation case,
+and also why the remaining step has no legitimate route on this machine.
 
 ---
 
