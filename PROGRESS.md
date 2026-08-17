@@ -24,12 +24,21 @@ Local FUT server for FIFA 15 PC. Big 3 verified in the real game: packs, squad b
 - **Client DB parser.** Reads `cards_ng_db.db` through its `-meta.xml` descriptor, including Huffman-compressed name tables. Header CRC-32/MPEG-2 verified against the retail DB.
 - **Player catalog.** 16,185 FIFA 15 players extracted from the game's own DB, 21,316 names, zero missing team/nation/league links. Ratings check out (Messi 93, Ronaldo 92, Neuer 90).
 - **TLS certificates.** old-protossl / sha1 / sha256. The old-protossl chain is correctly malformed: inner `md5WithRSAEncryption`, outer patched to `rsaEncryption`.
-- **Blaze protocol layer.** TDF encode/decode, FIRE framing, redirector + bootstrap payloads.
+- **Blaze protocol layer, verified over real sockets.** `tools/selftest_blaze.py` performs the full client sequence and passes: TLS to the redirector, `getServerInstance` returning the right loopback address and port, `preAuth` (19 components, correct service name `fifa-2015-pc`), all five OSDK config groups, login with a persona, the three UserSessions notifications that flip the client online, `postAuth`, and `ping`. The redirector accepts **TLS 1.0 / 1.1 / 1.2 / 1.3**, covering whatever ProtoSSL negotiates.
 - **Identity store.** SQLite club, items, squads, listings, coin ledger, idempotent grants. Full self-test passes (`tools/selftest_identity.py`).
 - **Packs (server-side).** 8 retail-shaped packs. Correct tiering, guaranteed rares, a keeper in every pack, correct FUT `ItemData` wire contract.
 - **`GIVE_100M_TEST_COINS.bat`** — double-click, grants 100M coins, idempotent; `--repeat` grants another lot.
 
-Nothing is verified in the real game yet. That is the next milestone.
+**Nothing is verified inside the real game yet, and cannot be until the boot crash below is resolved.** Everything above is proven against real sockets and real HTTP, but that is not the same as seeing it on screen, and I am not claiming otherwise.
+
+### How to re-run the proof yourself
+
+```
+.venv\Scripts\python.exe server\main.py --quiet
+.venv\Scripts\python.exe tools\selftest_identity.py
+.venv\Scripts\python.exe tools\selftest_blaze.py
+.venv\Scripts\python.exe tools\selftest_http.py
+```
 
 ## Environment facts
 
@@ -91,20 +100,19 @@ Ruled out:
 | Missing Visual C++ runtime | VC++ 2012 x86+x64 installed; `msvcr110.dll` present in System32 and SysWOW64. |
 | Corrupt shader/data cache | `Documents\FIFA 15\cache0` is empty (0 files); not the cause. |
 | Incomplete install | 9.5 GB / 197 files; `common.cbac` and `ant.cbac` both present and large. |
+| Windows 11 incompatibility | Applied a `WIN7RTM` per-app compatibility shim, retested, still crashes at 28s. **Shim removed, registry back to empty.** |
 
 Remaining theories, in order of my confidence:
 
-1. **Audio subsystem incompatibility.** The crash follows a long run of audio-asset loads. Old EA titles commonly fault on modern audio endpoints running at 24-bit/192 kHz; the fix is setting the default playback device to 16-bit/44.1 kHz. I did not change this — it is a system-wide setting and you were away.
-2. **Windows 11 compatibility.** This is a 2014 title on Windows 11 build 26200. Running `fifa15.exe` in Windows 7 compatibility mode is the standard first move. I did not set this — it writes outside the folders you scoped me to.
-3. **Bad repack / missing audio content.** The install is a CPY release; a truncated audio archive would produce exactly this null-resource fault.
+1. **Audio subsystem incompatibility.** The crash follows a long run of audio-asset loads and nothing else. Old EA titles commonly fault on modern audio endpoints running at 24-bit/192 kHz. The fix is a system-wide sound setting, so I left it for you.
+2. **Bad repack / damaged audio content.** This is a CPY release; a truncated audio archive produces exactly this null-resource fault on a loader thread.
 
 ### What I need from you (only these need a human)
 
-1. Right-click `F:\Games\FIFA 15\fifa15.exe` → Properties → Compatibility → tick **Run this program in compatibility mode for: Windows 7** → Apply. Then run `RUN_FIFA15_LOCAL_FUT.bat`.
-2. If it still dies at ~26s: open Windows Sound settings → your Headphones device → Properties → Advanced → set Default Format to **16 bit, 44100 Hz (CD Quality)** → Apply. Retest.
-3. If it still dies: the repack's audio content is likely damaged. Reinstalling FIFA 15 from a different source would settle it, since everything else here is verified good.
+1. Open Windows Sound settings → your **Headphones** device → Properties → Advanced → set Default Format to **16 bit, 44100 Hz (CD Quality)** → Apply. Then double-click `RUN_FIFA15_LOCAL_FUT.bat`.
+2. If it still dies at ~26 seconds, the install's audio content is most likely damaged, and reinstalling FIFA 15 from a different source would settle it. Everything else in the chain is verified good.
 
-Tell me which of these you did and what happened, and I will carry on from there.
+Tell me which you did and what happened, and I will carry on from there. If the game boots at all, `RUN_FIFA15_LOCAL_FUT.bat` will capture its full endpoint contract into `logs/` automatically.
 
 ## Stuck / open questions
 
