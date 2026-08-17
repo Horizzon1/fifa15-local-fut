@@ -23,3 +23,6 @@ game_files/
 artifacts/
 dist/
 *.zip
+
+# Generated from the user's own FIFA 15 install (not redistributable)
+server/fifa15-*.json
